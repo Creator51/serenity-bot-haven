@@ -9,7 +9,7 @@ interface Message {
   text: string;
   isUser: boolean;
   isComplete?: boolean;
-  fullText?: string; // Add this property to store the full response text
+  fullText?: string;
 }
 
 const initialMessages: Message[] = [
@@ -21,12 +21,10 @@ const initialMessages: Message[] = [
   }
 ];
 
-// Advanced AI responses that are more helpful for mental wellness
-const getAIResponse = (userMessage: string): string => {
-  // Analyze the user message for keywords
+// Fallback responses in case the AI service is unavailable
+const getFallbackResponse = (userMessage: string): string => {
   const lowercaseMessage = userMessage.toLowerCase();
   
-  // Check for different emotional states and respond appropriately
   if (lowercaseMessage.includes("anxious") || lowercaseMessage.includes("anxiety") || lowercaseMessage.includes("worried")) {
     return "I notice you mentioned feeling anxious. Anxiety is a natural response to stress, but it can be overwhelming. Would you like to try a quick breathing exercise that might help? Or would you prefer to talk more about what's causing your anxiety?";
   } 
@@ -36,31 +34,12 @@ const getAIResponse = (userMessage: string): string => {
   else if (lowercaseMessage.includes("happy") || lowercaseMessage.includes("good") || lowercaseMessage.includes("great")) {
     return "I'm glad to hear you're feeling positive! What's contributing to your good mood today? Recognizing what brings us joy can be helpful when we face challenging times.";
   }
-  else if (lowercaseMessage.includes("tired") || lowercaseMessage.includes("exhausted") || lowercaseMessage.includes("fatigue")) {
-    return "Feeling tired can affect both our physical and mental wellbeing. Are you getting enough rest? Sometimes mental fatigue can be just as draining as physical tiredness. Would you like to discuss some strategies for managing your energy levels?";
-  }
-  else if (lowercaseMessage.includes("stressed") || lowercaseMessage.includes("overwhelmed")) {
-    return "Feeling overwhelmed is common in our busy world. It might help to break down what's causing your stress into smaller, more manageable parts. Would you like to talk about specific stressors in your life, or would you prefer some immediate stress-reduction techniques?";
-  }
-  else if (lowercaseMessage.includes("help") || lowercaseMessage.includes("need advice")) {
-    return "I'm here to support you. To help in the most effective way, could you share a bit more about what you're looking for help with? While I'm not a replacement for professional support, I can offer a listening ear and some general wellness strategies.";
-  }
-  else if (lowercaseMessage.includes("thank")) {
-    return "You're very welcome. I'm here to support you whenever you need to talk or reflect. Is there anything else on your mind today?";
-  }
   else {
-    // For messages without specific keywords, use a general therapeutic response
     const generalResponses = [
       "Thank you for sharing that with me. Could you tell me more about how that makes you feel?",
       "I appreciate you opening up. In what ways has this been affecting your daily life?",
       "That sounds significant. How long have you been experiencing this?",
-      "I'm here to listen. What do you think might help you navigate this situation?",
-      "It takes courage to discuss these things. Have you found any strategies that help you cope with this?",
-      "Your experiences matter. How would you like things to be different?",
-      "I'm curious about what support might be most helpful for you right now?",
-      "That's understandable. Many people experience similar feelings. What usually helps when you feel this way?",
-      "I'm wondering if you've noticed any patterns or triggers related to what you're describing?",
-      "Thank you for trusting me with this. Would it be helpful to explore some potential coping strategies together?"
+      "I'm here to listen. What do you think might help you navigate this situation?"
     ];
     return generalResponses[Math.floor(Math.random() * generalResponses.length)];
   }
@@ -70,6 +49,7 @@ const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -90,7 +70,7 @@ const ChatInterface = () => {
         let currentIndex = 0;
         
         const interval = setInterval(() => {
-          currentIndex += 1;
+          currentIndex += 3; // Increase by 3 to make it faster
           if (currentIndex <= fullText.length) {
             setMessages(prevMessages => 
               prevMessages.map(m => 
@@ -123,7 +103,33 @@ const ChatInterface = () => {
     }
   }, [streamingMessageId, messages, toast]);
 
-  const handleSendMessage = (text: string) => {
+  const getAIResponse = async (userMessage: string): Promise<string> => {
+    try {
+      const response = await fetch('https://api.supabase.co/functions/v1/serenity-ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: userMessage }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Error from AI service:', errorData);
+        setApiError('Could not reach the AI service. Using fallback response.');
+        return getFallbackResponse(userMessage);
+      }
+
+      const data = await response.json();
+      return data.response;
+    } catch (error) {
+      console.error('Error calling AI service:', error);
+      setApiError('Could not reach the AI service. Using fallback response.');
+      return getFallbackResponse(userMessage);
+    }
+  };
+
+  const handleSendMessage = async (text: string) => {
     // Add user message
     const newUserMessage: Message = {
       id: Date.now().toString(),
@@ -136,23 +142,53 @@ const ChatInterface = () => {
     setIsLoading(true);
     
     // Generate AI response
-    const aiResponse = getAIResponse(text);
-    
-    // Small delay to simulate processing
-    setTimeout(() => {
+    try {
       const newBotMessageId = (Date.now() + 1).toString();
       
+      // Start with an empty bot message
       const newBotMessage: Message = {
         id: newBotMessageId,
         text: "", // Start empty for streaming effect
         isUser: false,
         isComplete: false,
-        fullText: aiResponse, // Store the full response here
+        fullText: "", // Will be populated after API call
       };
       
       setMessages(prev => [...prev, newBotMessage]);
+      
+      // Get AI response
+      const aiResponse = await getAIResponse(text);
+      
+      // Update the bot message with the full text
+      setMessages(prev => 
+        prev.map(m => 
+          m.id === newBotMessageId 
+            ? { ...m, fullText: aiResponse } 
+            : m
+        )
+      );
+      
+      // Start streaming effect
       setStreamingMessageId(newBotMessageId);
-    }, 800);
+      
+      if (apiError) {
+        toast({
+          title: "Notice",
+          description: apiError,
+          variant: "destructive",
+        });
+        setApiError(null);
+      }
+    } catch (error) {
+      console.error('Error in handleSendMessage:', error);
+      setIsLoading(false);
+      
+      toast({
+        title: "Error",
+        description: "There was a problem sending your message. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
