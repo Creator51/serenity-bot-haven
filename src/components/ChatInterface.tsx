@@ -9,6 +9,7 @@ interface Message {
   text: string;
   isUser: boolean;
   isComplete?: boolean;
+  fullText?: string; // Add this property to store the full response text
 }
 
 const initialMessages: Message[] = [
@@ -83,9 +84,9 @@ const ChatInterface = () => {
   // Simulate streaming text effect for AI responses
   useEffect(() => {
     if (streamingMessageId) {
-      const message = messages.find(m => m.id === streamingMessageId);
-      if (message && !message.isComplete) {
-        const fullText = message.text;
+      const messageIndex = messages.findIndex(m => m.id === streamingMessageId);
+      if (messageIndex !== -1 && !messages[messageIndex].isComplete && messages[messageIndex].fullText) {
+        const fullText = messages[messageIndex].fullText as string;
         let currentIndex = 0;
         
         const interval = setInterval(() => {
@@ -146,18 +147,11 @@ const ChatInterface = () => {
         text: "", // Start empty for streaming effect
         isUser: false,
         isComplete: false,
+        fullText: aiResponse, // Store the full response here
       };
       
       setMessages(prev => [...prev, newBotMessage]);
       setStreamingMessageId(newBotMessageId);
-      
-      // Store full response in a hidden property to stream it
-      Object.defineProperty(newBotMessage, 'fullText', {
-        value: aiResponse,
-        writable: true,
-        enumerable: false
-      });
-      
     }, 800);
   };
 
