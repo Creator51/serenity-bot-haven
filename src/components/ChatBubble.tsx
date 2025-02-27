@@ -19,6 +19,9 @@ const ChatBubble = ({ message, isUser, animationDelay = 0 }: ChatBubbleProps) =>
     return () => clearTimeout(timer);
   }, [animationDelay]);
 
+  // Don't render empty messages (for when streaming begins)
+  if (!message.trim()) return null;
+
   return (
     <div 
       className={`flex items-start gap-3 ${isUser ? 'justify-end' : 'justify-start'} ${
