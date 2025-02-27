@@ -70,7 +70,7 @@ const ChatInterface = () => {
         let currentIndex = 0;
         
         const interval = setInterval(() => {
-          currentIndex += 3; // Increase by 3 to make it faster
+          currentIndex += 3; // Increase by 3 characters at a time for faster display
           if (currentIndex <= fullText.length) {
             setMessages(prevMessages => 
               prevMessages.map(m => 
@@ -96,7 +96,7 @@ const ChatInterface = () => {
               description: "Serenity AI has responded to your message",
             });
           }
-        }, 20); // Adjust speed of text appearance
+        }, 20); // 20ms interval for smoother animation
 
         return () => clearInterval(interval);
       }
@@ -105,6 +105,8 @@ const ChatInterface = () => {
 
   const getAIResponse = async (userMessage: string): Promise<string> => {
     try {
+      console.log("Calling AI service with message:", userMessage);
+      
       const response = await fetch('https://api.supabase.co/functions/v1/serenity-ai', {
         method: 'POST',
         headers: {
@@ -121,7 +123,16 @@ const ChatInterface = () => {
       }
 
       const data = await response.json();
-      return data.response;
+      console.log("Received AI response:", data);
+      
+      // Make sure we're extracting the correct response property
+      if (data && data.response) {
+        return data.response;
+      } else {
+        console.error('Unexpected response format from AI service:', data);
+        setApiError('Received an invalid response format. Using fallback response.');
+        return getFallbackResponse(userMessage);
+      }
     } catch (error) {
       console.error('Error calling AI service:', error);
       setApiError('Could not reach the AI service. Using fallback response.');
@@ -159,11 +170,18 @@ const ChatInterface = () => {
       // Get AI response
       const aiResponse = await getAIResponse(text);
       
+      // Clean up the response if needed
+      let cleanResponse = aiResponse;
+      // Remove "Your response:" if present in the response
+      if (typeof cleanResponse === 'string' && cleanResponse.includes('Your response:')) {
+        cleanResponse = cleanResponse.split('Your response:').pop()?.trim() || cleanResponse;
+      }
+      
       // Update the bot message with the full text
       setMessages(prev => 
         prev.map(m => 
           m.id === newBotMessageId 
-            ? { ...m, fullText: aiResponse } 
+            ? { ...m, fullText: cleanResponse } 
             : m
         )
       );
